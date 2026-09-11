@@ -587,43 +587,4 @@
                 ctx.beginPath();
                 ctx.roundRect(35, 150, 290, 48, 12);
                 ctx.fill();
-                ctx.stroke();
-
-                ctx.fillStyle = "#000000";
-                ctx.font = "900 18px sans-serif";
-                ctx.textAlign = "center";
-                ctx.fillText("👇 TAP RED BUTTON TO FLY! 👇", 180, 180);
-            }
-
-            // EASY SCOREBOARD
-            ctx.fillStyle = "#facc15";
-            ctx.strokeStyle = "#000000";
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.roundRect(170, 12, 175, 42, 12);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = "#000000";
-            ctx.font = "900 20px sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText(`SCORE: ${Math.floor(score)}`, 257, 40);
-
-            // Speed Bar
-            ctx.fillStyle = "rgba(0,0,0,0.25)";
-            ctx.beginPath();
-            ctx.roundRect(15, 20, 90, 16, 8);
-            ctx.fill();
-
-            ctx.fillStyle = "#ff4757";
-            ctx.beginPath();
-            ctx.roundRect(15, 20, Math.min(speed * 1.3, 90), 16, 8);
-            ctx.fill();
-
-            requestAnimationFrame(loop);
-        }
-
-        loop();
-    </script>
-</body>
-</html>
+                
