@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            text-align: center; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #1a1a1a; 
+            color: white; 
+            margin: 0; 
+            padding: 10px 0; 
+        }
+        .game-container {
+            position: relative;
+            width: 360px;
+            margin: 0 auto;
+        }
+        canvas { 
+            background: #87CEEB; 
+            display: block; 
+            border-radius: 16px; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4); 
+        }
+        button { 
+            padding: 16px 45px; 
+            font-size: 22px; 
+            border-radius: 14px; 
+            border: 3px solid #ffffff; 
+            background: #ff4757; 
+            color: white; 
+            font-weight: 900; 
+            cursor: pointer; 
+            box-shadow: 0 6px 14px rgba(255, 71, 87, 0.5); 
+            user-select: none; 
+            touch-action: manipulation;
+            margin-top: 10px;
+            letter-spacing: 1px;
+        }
+        button:active { 
+            background: #ff6b81; 
+            transform: scale(0.96); 
+        }
+        
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 360px;
+            height: 500px;
+            background: rgba(15, 23, 42, 0.88);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+            padding: 20px;
+            z-index: 10;
+        }
+        .overlay h2 {
+            margin: 0 0 10px 0;
+            color: #f8fafc;
+            font-size: 26px;
+        }
+        .overlay p {
+            margin: 0 0 20px 0;
+            color: #cbd5e1;
+            font-size: 18px;
+            line-height: 1.4;
+        }
+        .overlay input {
+            padding: 12px 16px;
+            font-size: 18px;
+            border-radius: 10px;
+            border: 3px solid #38bdf8;
+            outline: none;
+            text-align: center;
+            width: 75%;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h2>Let's Fly Maddy</h2>
+    
+    <div class="game-container">
+        <canvas id="gameCanvas" width="360" height="500"></canvas>
+        
+        <!-- Start Screen Overlay -->
+        <div id="startOverlay" class="overlay">
+            <h2>Welcome Pilot! ✈️</h2>
+            <p>Enter your name to start:</p>
+            <input type="text" id="playerNameInput" placeholder="Enter Name" value="Captain">
+            <button onclick="startGame()">START GAME</button>
+        </div>
+
+        <!-- End Game Overlay -->
+        <div id="endOverlay" class="overlay" style="display: none;">
+            <h2 id="endTitle">CRASH!</h2>
+            <p id="endMessage"></p>
+            <button onclick="restartGame()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <button id="tapBtn">TAP FOR LIFT</button>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game Settings & States
+        let playerName = "Captain";
+        let gameState = "START";
+        let hasStartedFlight = false;
+        
+        const planeX = 100;
+        let planeY = 220;
+        let speed = 0;
+        let score = 0;
+        const targetScore = 2000;
+
+        // SUPER EASY PHYSICS TUNING FOR 7-YEAR-OLDS
+        const gravity = 1.0;          // Extra floaty downward descent
+        const liftFactor = 0.38;     // Generous lift per tap
+        const tapBoost = 15;         // Responsive single tap boost
+        const decay = 0.18;          // Speed decays slowly so plane stays airborne effortlessly
+        const groundY = 440;
+        const minHeightLimit = 40;   // Safe ceiling limit
+
+        let currentWindForce = 0;
+
+        // Background Clouds
+        const clouds = [
+            { x: 50, y: 60, scale: 0.8 },
+            { x: 260, y: 100, scale: 1.1 }
+        ];
+
+        // Obstacles (Wider Spacing & Lower Heights)
+        let groundObstacles = [];
+        let birds = [];
+        let stormClouds = [];
+        let topClouds = [];
+
+        function initObstacles() {
+            groundObstacles = [
+                { x: 550, type: 'tree', height: 60, width: 40 },
+                { x: 950, type: 'building', height: 85, width: 50 },
+                { x: 1350, type: 'tree', height: 55, width: 40 }
+            ];
+
+            birds = [
+                { x: 750, y: 220, speed: 0.8, wingPhase: 0 },
+                { x: 1250, y: 260, speed: 1.0, wingPhase: 2 }
+            ];
+
+            stormClouds = [
+                { x: 1050, y: 80, width: 60, height: 35 }
+            ];
+
+            topClouds = [
+                { x: 650, y: 45, width: 55, height: 30 },
+                { x: 1150, y: 50, width: 60, height: 35 }
+            ];
+        }
+
+        function startGame() {
+            const input = document.getElementById('playerNameInput').value.trim();
+            if (input !== "") playerName = input;
+            
+            document.getElementById('startOverlay').style.display = 'none';
+            document.getElementById('endOverlay').style.display = 'none';
+            resetGame();
+            gameState = "PLAYING";
+        }
+
+        function restartGame() {
+            document.getElementById('endOverlay').style.display = 'none';
+            resetGame();
+            gameState = "PLAYING";
+        }
+
+        function resetGame() {
+            planeY = 220;
+            speed = 0;
+            score = 0;
+            hasStartedFlight = false;
+            currentWindForce = 0;
+            initObstacles();
+        }
+
+        // Tap Controls
+        document.getElementById('tapBtn').addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            if (gameState === "PLAYING") {
+                if (!hasStartedFlight) {
+                    hasStartedFlight = true;
+                }
+                speed = Math.min(speed + tapBoost, 65);
+            }
+        });
+
+        // ---------------- DRAWING FUNCTIONS ----------------
+
+        function drawCloud(x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+            ctx.beginPath();
+            ctx.arc(0, 0, 20, 0, Math.PI * 2);
+            ctx.arc(18, -10, 16, 0, Math.PI * 2);
+            ctx.arc(35, 0, 18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawTopCloud(tc) {
+            ctx.save();
+            ctx.translate(tc.x, tc.y);
+            
+            ctx.fillStyle = "#475569";
+            ctx.strokeStyle = "#0f172a";
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.arc(0, 0, 16, 0, Math.PI * 2);
+            ctx.arc(15, -6, 14, 0, Math.PI * 2);
+            ctx.arc(30, 0, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#334155";
+            ctx.beginPath();
+            ctx.arc(12, 4, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawTree(obs) {
+            const trunkWidth = 14;
+            const trunkX = obs.x + (obs.width - trunkWidth) / 2;
+            const trunkY = groundY - obs.height;
+
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "#1e272e";
+
+            ctx.fillStyle = "#8d5524";
+            ctx.beginPath();
+            ctx.rect(trunkX, trunkY, trunkWidth, obs.height);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#2ed573";
+            const foliageY = trunkY - 10;
+            ctx.beginPath();
+            ctx.arc(obs.x + obs.width / 2, foliageY, obs.width / 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function drawBuilding(obs) {
+            const bY = groundY - obs.height;
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "#1e272e";
+
+            ctx.fillStyle = "#4b5563";
+            ctx.beginPath();
+            ctx.rect(obs.x, bY, obs.width, obs.height);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#fef08a";
+            for (let wy = bY + 12; wy < groundY - 12; wy += 20) {
+                for (let wx = obs.x + 8; wx <= obs.x + obs.width - 16; wx += 16) {
+                    ctx.fillRect(wx, wy, 8, 10);
+                    ctx.strokeRect(wx, wy, 8, 10);
+                }
+            }
+        }
+
+        function drawBird(bird) {
+            ctx.save();
+            ctx.translate(bird.x, bird.y);
+            ctx.strokeStyle = "#0f172a";
+            ctx.lineWidth = 3;
+            ctx.fillStyle = "#f43f5e";
+
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 10, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            let wingY = Math.sin(bird.wingPhase) * 7;
+            ctx.beginPath();
+            ctx.moveTo(-2, 0);
+            ctx.quadraticCurveTo(-6, -10 + wingY, -12, -5 + wingY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(2, 0);
+            ctx.quadraticCurveTo(6, -10 + wingY, 12, -5 + wingY);
+            ctx.stroke();
+
+            ctx.fillStyle = "#fbbf24";
+            ctx.beginPath();
+            ctx.moveTo(-10, -2);
+            ctx.lineTo(-14, 0);
+            ctx.lineTo(-10, 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawStormCloud(sc) {
+            ctx.save();
+            ctx.translate(sc.x, sc.y);
+
+            ctx.fillStyle = "#334155";
+            ctx.strokeStyle = "#0f172a";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, 18, 0, Math.PI * 2);
+            ctx.arc(16, -8, 14, 0, Math.PI * 2);
+            ctx.arc(32, 0, 16, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#facc15";
+            ctx.beginPath();
+            ctx.moveTo(12, 10);
+            ctx.lineTo(4, 22);
+            ctx.lineTo(12, 22);
+            ctx.lineTo(6, 34);
+            ctx.lineTo(20, 18);
+            ctx.lineTo(12, 18);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawCustomCutePlane(x, y, tiltAngle) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(-tiltAngle); 
+            ctx.scale(-1, 1);
+
+            ctx.lineWidth = 3.5;
+            ctx.strokeStyle = "#1c1917";
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+
+            // Engine
+            ctx.fillStyle = "#f59e0b"; 
+            ctx.beginPath();
+            ctx.roundRect(-16, 11, 26, 13, [0, 6, 6, 0]);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#d97706";
+            ctx.beginPath();
+            ctx.ellipse(-16, 17.5, 4, 6.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Tail Fin
+            ctx.fillStyle = "#2563eb"; 
+            ctx.beginPath();
+            ctx.ellipse(28, 3, 7, 11, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Main Fuselage
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.moveTo(-34, 1);
+            ctx.bezierCurveTo(-34, -22, -10, -22, 15, -18);
+            ctx.bezierCurveTo(28, -16, 36, -8, 36, 1);
+            ctx.bezierCurveTo(36, 10, 26, 14, 10, 15);
+            ctx.bezierCurveTo(-10, 16, -26, 14, -34, 1);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Windows
+            ctx.fillStyle = "#bfdbfe"; 
+            ctx.beginPath(); ctx.roundRect(-12, -12, 12, 11, 4); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.roundRect(2, -11, 10, 9, 3.5); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.roundRect(14, -10, 8, 8, 3); ctx.fill(); ctx.stroke();
+
+            // Blue Wing
+            ctx.fillStyle = "#2563eb";
+            ctx.beginPath();
+            ctx.ellipse(-2, 6, 14, 6, 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Face
+            ctx.fillStyle = "#1c1917";
+            ctx.beginPath(); ctx.arc(-22, -10, 2.5, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(-22, -13, 3.5, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+            ctx.beginPath(); ctx.arc(-33, 2, 2.5, 0.2, Math.PI * 0.8); ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // ---------------- COLLISIONS & LOGIC ----------------
+
+        function checkCollision() {
+            // Ground
+            if (planeY >= groundY - 10) return true;
+
+            // Ground Obstacles (Forgiving hitboxes)
+            for (let obs of groundObstacles) {
+                let obsLeft = obs.x + 10;
+                let obsRight = obs.x + obs.width - 10;
+                let obsTop = groundY - obs.height + 10;
+
+                if (planeX + 12 > obsLeft && planeX - 12 < obsRight && planeY + 6 > obsTop) {
+                    return true;
+                }
+            }
+
+            // Birds (Smaller collision radius)
+            for (let bird of birds) {
+                let dx = planeX - bird.x;
+                let dy = planeY - bird.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 14) return true;
+            }
+
+            // Lightning Bolt
+            for (let sc of stormClouds) {
+                let boltX = sc.x + 12;
+                let boltY = sc.y + 22;
+                let dx = planeX - boltX;
+                let dy = planeY - boltY;
+                if (Math.sqrt(dx * dx + dy * dy) < 12) return true;
+            }
+
+            // Top Cloud Obstacles
+            for (let tc of topClouds) {
+                let dx = planeX - (tc.x + 15);
+                let dy = planeY - tc.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 18) return true;
+            }
+
+            return false;
+        }
+
+        function triggerGameOver() {
+            gameState = "GAMEOVER";
+            document.getElementById('endTitle').innerText = "OOPH!";
+            document.getElementById('endTitle').style.color = "#ff4757";
+            document.getElementById('endMessage').innerText = `Great try, ${playerName}! Let's fly again!`;
+            document.getElementById('endOverlay').style.display = 'flex';
+        }
+
+        function triggerWin() {
+            gameState = "WIN";
+            document.getElementById('endTitle').innerText = "SUPER PILOT! 🎉";
+            document.getElementById('endTitle').style.color = "#2ed573";
+            document.getElementById('endMessage').innerText = `Awesome job ${playerName}! You won! ⭐`;
+            document.getElementById('endOverlay').style.display = 'flex';
+        }
+
+        // ---------------- MAIN GAME LOOP ----------------
+
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === "PLAYING") {
+                if (hasStartedFlight) {
+                    // Physics Update
+                    speed = Math.max(0, speed - decay);
+                    let lift = speed * liftFactor;
+                    let verticalVelocity = -(lift - gravity) + currentWindForce;
+                    
+                    planeY += verticalVelocity;
+
+                    // Height ceiling limit
+                    if (planeY < minHeightLimit) {
+                        planeY = minHeightLimit;
+                    }
+
+                    // Score increment (Slightly faster progression for kids)
+                    score += 1.8;
+                    if (score >= targetScore) {
+                        score = targetScore;
+                        triggerWin();
+                    }
+
+                    // Gentle Wind Effect
+                    currentWindForce = 0;
+                    stormClouds.forEach(sc => {
+                        if (planeX > sc.x - 20 && planeX < sc.x + sc.width + 20) {
+                            currentWindForce = 0.5;
+                        }
+                    });
+
+                    // Slower, easier scroll speed
+                    let scrollSpeed = 1.2 + (speed * 0.02);
+
+                    clouds.forEach(cloud => {
+                        cloud.x -= scrollSpeed * 0.3;
+                        if (cloud.x < -60) cloud.x = canvas.width + 40;
+                    });
+
+                    groundObstacles.forEach(obs => {
+                        obs.x -= scrollSpeed;
+                        if (obs.x < -70) {
+                            obs.x = canvas.width + Math.random() * 200 + 150;
+                            obs.type = Math.random() > 0.5 ? 'building' : 'tree';
+                            obs.height = obs.type === 'building' ? Math.floor(Math.random() * 30) + 65 : Math.floor(Math.random() * 30) + 45;
+                            obs.width = obs.type === 'building' ? 50 : 40;
+                        }
+                    });
+
+                    birds.forEach(bird => {
+                        bird.x -= (scrollSpeed + bird.speed);
+                        bird.wingPhase += 0.1;
+                        if (bird.x < -40) {
+                            bird.x = canvas.width + Math.random() * 300 + 200;
+                            bird.y = Math.floor(Math.random() * 120) + 160;
+                        }
+                    });
+
+                    stormClouds.forEach(sc => {
+                        sc.x -= scrollSpeed * 0.6;
+                        if (sc.x < -80) {
+                            sc.x = canvas.width + Math.random() * 350 + 250;
+                            sc.y = Math.floor(Math.random() * 40) + 60;
+                        }
+                    });
+
+                    topClouds.forEach(tc => {
+                        tc.x -= scrollSpeed * 0.8;
+                        if (tc.x < -80) {
+                            tc.x = canvas.width + Math.random() * 250 + 180;
+                            tc.y = Math.floor(Math.random() * 20) + 40;
+                        }
+                    });
+
+                    // Collision Check
+                    if (checkCollision()) {
+                        triggerGameOver();
+                    }
+                }
+            }
+
+            // Draw Background Clouds & Top Clouds
+            clouds.forEach(cloud => drawCloud(cloud.x, cloud.y, cloud.scale));
+            stormClouds.forEach(sc => drawStormCloud(sc));
+            topClouds.forEach(tc => drawTopCloud(tc));
+
+            // Draw Ground
+            ctx.fillStyle = "#2ed573";
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "#1e272e";
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(canvas.width, groundY);
+            ctx.stroke();
+
+            // Draw Obstacles
+            groundObstacles.forEach(obs => {
+                if (obs.type === 'tree') drawTree(obs);
+                else drawBuilding(obs);
+            });
+
+            // Draw Flying Birds
+            birds.forEach(bird => drawBird(bird));
+
+            // Draw Plane
+            let tiltAngle = (gameState === "GAMEOVER") ? 0.3 : Math.max(Math.min((-(speed * liftFactor - gravity)) * 0.03, 0.25), -0.25);
+            drawCustomCutePlane(planeX, planeY, tiltAngle);
+
+            // READY TAP HINT
+            if (gameState === "PLAYING" && !hasStartedFlight) {
+                ctx.fillStyle = "#facc15";
+                ctx.strokeStyle = "#000000";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.roundRect(35, 150, 290, 48, 12);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = "#000000";
+                ctx.font = "900 18px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("👇 TAP RED BUTTON TO FLY! 👇", 180, 180);
+            }
+
+            // EASY SCOREBOARD
+            ctx.fillStyle = "#facc15";
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.roundRect(170, 12, 175, 42, 12);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#000000";
+            ctx.font = "900 20px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(`SCORE: ${Math.floor(score)}`, 257, 40);
+
+            // Speed Bar
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
+            ctx.beginPath();
+            ctx.roundRect(15, 20, 90, 16, 8);
+            ctx.fill();
+
+            ctx.fillStyle = "#ff4757";
+            ctx.beginPath();
+            ctx.roundRect(15, 20, Math.min(speed * 1.3, 90), 16, 8);
+            ctx.fill();
+
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
